@@ -2,23 +2,28 @@
 // указываем версию Solidity, которую мы будем использовать
 pragma solidity ^0.8.0;
 
+import "./Ticket.sol";
+
 // создаем контракт
 contract VipAuctionEngine {
     // адрес владельца контракта (адрес кошелька, на который будут поступать средства от продажи билетов)
     address public owner;
-    uint constant DURATION = 120; // 1 секунд стандартное время аукциона
+    //uint constant DURATION = 1 days; // 1 день стандартное время аукциона
+    uint constant DURATION = 5 minutes; // 5 минут стандартное время аукциона
+    //uint constant DURATION = 1; // 1 секунда для тестов стандартное время аукциона
     uint constant MIN_BID = 10**15; // 0.001 BNB
 
    // структура для хранения информации об участнике аукциона
     struct Bidder {
-        address payable bidderAddress;
+        address bidderAddress;
         uint256 bid;
         uint timestamp;
     }
 
     struct Auction {
         string item; // Наименование билета
-        uint ticketsAmount; // Количество билетов
+        uint ticketsSupply; // Количество билетов
+        Ticket ticket; // Контракт нфт билетов
         uint minBid; // Минимальная ставка
         Bidder[] winners;// массив для хранения победителей аукциона
         Bidder[] otherParticipants;// массив для хранения участников аукциона
@@ -30,6 +35,8 @@ contract VipAuctionEngine {
     Auction[] public auctions;
     event BidAdded(uint indexed index, address bidderAddress, uint bid, Bidder[] winners, Bidder[] otherParticipants);
     event AuctionCreated(uint indexed index, string itemName, uint minBid, uint duration);
+    
+    // событие для уведомления об окончании аукциона и распределении билетов
     event AuctionEnded(uint indexed index, uint endPrice, Bidder[] winners, Bidder[] otherParticipants);
 
     // конструктор контракта
@@ -39,13 +46,16 @@ contract VipAuctionEngine {
 
 
     modifier onlyDuringAuction(uint index) {
-        require(!auctions[index].ended,
+        require(
+        block.timestamp < auctions[index].endsAt && //для тестов это убраю
+        !auctions[index].ended,
         "Auction is not currently open or finished");
         _;
     }
 
     modifier onlyAfterAuction(uint index) {
-        require(block.timestamp >= auctions[index].endsAt,
+        require(block.timestamp >= auctions[index].endsAt &&
+        !auctions[index].ended,
         "Auction is still open");
         _;
     }
@@ -57,21 +67,17 @@ contract VipAuctionEngine {
         // execute the rest of the code.
         _;
     }
-
-    // событие для уведомления об окончании аукциона и распределении билетов
-    event AuctionEnded(address winner, uint256 amount, uint256 tickets);
-
     // функция для начала аукциона
-    function createAuction(uint _minBid, uint _duration, string memory _item, uint _ticketsAmount) external {
+    function createAuction(uint _minBid, uint _duration, string calldata _item, uint _ticketsSupply) external  onlyOwner {
         uint minBid = _minBid == 0 ? MIN_BID : _minBid;
         uint duration = _duration == 0 ? DURATION : _duration;
-        uint ticketsAmount = _ticketsAmount == 0 ? 3 : _ticketsAmount;
-        require(minBid >= MIN_BID, "Min bid minimum is 0.0001 BNB");
+        uint ticketsSupply = _ticketsSupply == 0 ? 3 : _ticketsSupply;
+        require(minBid >= MIN_BID, "Min bid for auction creation is 0.001 BNB");
         
-
         Auction storage auction = auctions.push();
         auction.item = _item;
-        auction.ticketsAmount = ticketsAmount;
+        auction.ticketsSupply = ticketsSupply;
+        auction.ticket = new Ticket(_item, ticketsSupply);
         auction.minBid = minBid;
         auction.startAt = block.timestamp; // now
         auction.endsAt = block.timestamp + duration;
@@ -80,17 +86,19 @@ contract VipAuctionEngine {
     }
 
     // функция для участия в аукционе
-    function bid(uint index) public payable onlyDuringAuction(index) { 
-        //require(_ticketsToBuy <= auctions[index].amount, "Don't try to buy more tickets that allowed");
+    function bid(uint index) external payable onlyDuringAuction(index) { 
         require(msg.value >= auctions[index].minBid, "Bid amount is too low");
 
-        uint winnersLength = auctions[index].ticketsAmount;
+        uint winnersLength = auctions[index].ticketsSupply;
+        //Пока есть свободные места добавлять участников не поднимая ставку
         if (auctions[index].winners.length < winnersLength) {
             auctions[index].winners.push(Bidder(payable(msg.sender), msg.value, block.timestamp));
+            //Когда занято последнее место изминить минимальную ставку 
             if (auctions[index].winners.length == winnersLength) {
                 setMinBidForAuction(index);
             }
         } else {
+            // Иначе найти минимальную и позднюю ставку и заменить текущей
             Bidder memory lowestBidder = Bidder(payable(address(0)), 2**256-1, 0);
             uint lowestBidId = 0;
             for (uint i = 0; i < winnersLength ; i++) {
@@ -110,17 +118,20 @@ contract VipAuctionEngine {
 
     // функция для окончания аукциона и распределения билетов
     function endAuction(uint index) public onlyAfterAuction(index) {
-        //require(auctions[index].winners.length < auctions[index].ticketsAmount, "Not all winners have been identified");
+        //require(auctions[index].winners.length < auctions[index].ticketsSupply, "Not all winners have been identified");
 
-
-
-        // отправляем билеты на адрес участника
+        // отправляем билеты на адрес победителей и их ставки владельцу контракта
         // здесь можно использовать NFT-стандарт (например, ERC-721), чтобы создать уникальные билеты
+        for (uint i = 0; i < auctions[index].winners.length; i++) {
+            auctions[index].ticket.safeMint(auctions[index].winners[i].bidderAddress);
+            payable(owner).transfer(
+                auctions[index].winners[i].bid
+            );
+        }
 
-
-        // Возвращаем средства остальным участникам аукциона
+        // возвращаем средства остальным участникам аукциона
         for (uint i = 0; i < auctions[index].otherParticipants.length; i++) {
-            auctions[index].otherParticipants[i].bidderAddress.transfer(
+            payable(auctions[index].otherParticipants[i].bidderAddress).transfer(
                 auctions[index].otherParticipants[i].bid
             );
         }
@@ -129,10 +140,10 @@ contract VipAuctionEngine {
         emit AuctionEnded(index, auctions[index].minBid, auctions[index].winners, auctions[index].otherParticipants);
     }
 
-    // Устанавливаем минимальную ставку
+    // Функция для нахождения текущей минимальной ставки и прибавления 1 finney
     function setMinBidForAuction(uint index) private {
-        uint minimumBid = 2**256-1;
-        for (uint i = 0; i < auctions[index].ticketsAmount; i++){
+        uint256 minimumBid = 2**256-1;
+        for (uint i = 0; i < auctions[index].winners.length; i++){
             uint iBid = auctions[index].winners[i].bid;
             if (iBid < minimumBid){
                 minimumBid = iBid;
