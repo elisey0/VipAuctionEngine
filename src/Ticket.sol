@@ -1,9 +1,9 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./ERC721.sol";
-import "./ERC721Enumerable.sol";
-import "./ERC721URIStorage.sol";
+import "../library/ERC721.sol";
+import "../library/ERC721Enumerable.sol";
+import "../library/ERC721URIStorage.sol";
 
 contract Ticket is ERC721, ERC721Enumerable, ERC721URIStorage {
     address public owner;

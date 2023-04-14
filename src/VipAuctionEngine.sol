@@ -9,9 +9,10 @@ contract VipAuctionEngine {
     // адрес владельца контракта (адрес кошелька, на который будут поступать средства от продажи билетов)
     address public owner;
     //uint constant DURATION = 1 days; // 1 день стандартное время аукциона
-    uint constant DURATION = 5 minutes; // 5 минут стандартное время аукциона
-    //uint constant DURATION = 1; // 1 секунда для тестов стандартное время аукциона
+    //uint constant DURATION = 5 minutes; // 5 минут стандартное время аукциона
+    uint constant DURATION = 1; // 1 секунда для тестов стандартное время аукциона
     uint constant MIN_BID = 10**15; // 0.001 BNB
+    uint constant COMMISSION = 10; // 10% за организацию аукциона
 
    // структура для хранения информации об участнике аукциона
     struct Bidder {
@@ -21,12 +22,13 @@ contract VipAuctionEngine {
     }
 
     struct Auction {
-        string item; // Наименование билета
-        uint ticketsSupply; // Количество билетов
-        Ticket ticket; // Контракт нфт билетов
+        string item; // Наименование лота
+        uint ticketsSupply; // Количество лотов
         uint minBid; // Минимальная ставка
-        Bidder[] winners;// массив для хранения победителей аукциона
-        Bidder[] otherParticipants;// массив для хранения участников аукциона
+        address ticket; // Адрес контракта нфт лота
+        address revenueAdress; // Адрес дохода - куда идут с редства с продажи лотов (-10% комиссия)
+        Bidder[] winners;// Массив для хранения победителей аукциона
+        Bidder[] otherParticipants;// Массив для хранения участников аукциона
         uint startAt; // Время начала аукциона
         uint endsAt; // Время оканчания аукциона
         bool ended; // Окончился ли аукцион
@@ -47,7 +49,7 @@ contract VipAuctionEngine {
 
     modifier onlyDuringAuction(uint index) {
         require(
-        block.timestamp < auctions[index].endsAt && //для тестов это убраю
+        //block.timestamp < auctions[index].endsAt && //для тестов это убраю
         !auctions[index].ended,
         "Auction is not currently open or finished");
         _;
@@ -56,29 +58,36 @@ contract VipAuctionEngine {
     modifier onlyAfterAuction(uint index) {
         require(block.timestamp >= auctions[index].endsAt &&
         !auctions[index].ended,
-        "Auction is still open");
+        "Auction is still open or ended");
         _;
     }
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
-        // Underscore is a special character only used inside
-        // a function modifier and it tells Solidity to
-        // execute the rest of the code.
         _;
     }
+
     // функция для начала аукциона
-    function createAuction(uint _minBid, uint _duration, string calldata _item, uint _ticketsSupply) external  onlyOwner {
-        uint minBid = _minBid == 0 ? MIN_BID : _minBid;
-        uint duration = _duration == 0 ? DURATION : _duration;
+    function createAuction(
+        string calldata _item,
+        uint _ticketsSupply,
+        uint _minBid, 
+        address _revenueAdress, 
+        uint _duration
+        ) external  onlyOwner {
         uint ticketsSupply = _ticketsSupply == 0 ? 3 : _ticketsSupply;
+        uint minBid = _minBid == 0 ? MIN_BID : _minBid;
+        address revenueAdress = _revenueAdress == address(0) ? owner : _revenueAdress;
+        uint duration = _duration == 0 ? DURATION : _duration;
         require(minBid >= MIN_BID, "Min bid for auction creation is 0.001 BNB");
         
         Auction storage auction = auctions.push();
         auction.item = _item;
         auction.ticketsSupply = ticketsSupply;
-        auction.ticket = new Ticket(_item, ticketsSupply);
         auction.minBid = minBid;
+        Ticket ticketContract = new Ticket(_item, ticketsSupply);
+        auction.ticket = address(ticketContract);
+        auction.revenueAdress = revenueAdress;
         auction.startAt = block.timestamp; // now
         auction.endsAt = block.timestamp + duration;
 
@@ -122,12 +131,13 @@ contract VipAuctionEngine {
 
         // отправляем билеты на адрес победителей и их ставки владельцу контракта
         // здесь можно использовать NFT-стандарт (например, ERC-721), чтобы создать уникальные билеты
+        uint auctionBids;
         for (uint i = 0; i < auctions[index].winners.length; i++) {
-            auctions[index].ticket.safeMint(auctions[index].winners[i].bidderAddress);
-            payable(owner).transfer(
-                auctions[index].winners[i].bid
-            );
+            Ticket(auctions[index].ticket).safeMint(auctions[index].winners[i].bidderAddress);
+            auctionBids += auctions[index].winners[i].bid;
         }
+        payable(auctions[index].revenueAdress).transfer(auctionBids*(100-COMMISSION)/100);
+        payable(owner).transfer(auctionBids*COMMISSION/100);
 
         // возвращаем средства остальным участникам аукциона
         for (uint i = 0; i < auctions[index].otherParticipants.length; i++) {

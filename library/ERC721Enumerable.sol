@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "./ERC721.sol";
-import "./IERC721Enumerable.sol";
+import "../interfaces/IERC721Enumerable.sol";
 
 abstract contract ERC721Enumerable is ERC721, IERC721Enumerable {
     uint[] private _allTokens;
