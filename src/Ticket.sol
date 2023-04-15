@@ -25,16 +25,13 @@ contract Ticket is ERC721, ERC721Enumerable, ERC721URIStorage {
         currentTokenId++;
     }
 
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(ERC721, ERC721Enumerable)
-        returns (bool)
-    {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(ERC721, ERC721Enumerable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function _baseURI() internal pure override returns(string memory) {
+    function _baseURI() internal pure override returns (string memory) {
         return "ipfs://";
     }
 
@@ -48,7 +45,11 @@ contract Ticket is ERC721, ERC721Enumerable, ERC721URIStorage {
         return super.tokenURI(tokenId);
     }
 
-    function _beforeTokenTransfer(address from, address to, uint tokenId) internal override(ERC721, ERC721Enumerable) {
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint tokenId
+    ) internal override(ERC721, ERC721Enumerable) {
         super._beforeTokenTransfer(from, to, tokenId);
     }
 }
