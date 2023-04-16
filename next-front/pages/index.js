@@ -1,5 +1,5 @@
 import { Component } from "react";
-import { ethers } from "ethers";
+const ethers = require("ethers");
 
 import { ConnectWallet } from "../components/ConnectWallet";
 import { WaitingForTransactionMessage } from "../components/WaitingForTransactionMessage";
