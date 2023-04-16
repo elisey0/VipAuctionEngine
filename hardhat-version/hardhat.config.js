@@ -22,6 +22,9 @@ module.exports = {
       accounts: [BNBT_PRIVATE_KEY],
       chainId: 97,
     },
+    hardhat: {
+      chainId: 1337,
+    },
   },
   etherscan: {
     apiKey: SCAN_API_KEY,

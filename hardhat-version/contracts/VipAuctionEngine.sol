@@ -24,7 +24,7 @@ contract VipAuctionEngine {
         uint ticketsSupply; // Количество лотов
         uint minBid; // Минимальная ставка
         address ticket; // Адрес контракта нфт лота
-        address revenueAdress; // Адрес дохода - куда идут с редства с продажи лотов (-10% комиссия)
+        address revenueAddress; // Адрес дохода - куда идут с редства с продажи лотов (-10% комиссия)
         Bidder[] winners; // Массив для хранения победителей аукциона
         Bidder[] otherParticipants; // Массив для хранения участников аукциона
         uint startAt; // Время начала аукциона
@@ -86,14 +86,14 @@ contract VipAuctionEngine {
         string calldata _item,
         uint _ticketsSupply,
         uint _minBid,
-        address _revenueAdress,
+        address _revenueAddress,
         uint _duration
     ) external onlyOwner {
         uint ticketsSupply = _ticketsSupply == 0 ? 3 : _ticketsSupply;
         uint minBid = _minBid == 0 ? MIN_BID : _minBid;
-        address revenueAdress = _revenueAdress == address(0)
+        address revenueAddress = _revenueAddress == address(0)
             ? owner
-            : _revenueAdress;
+            : _revenueAddress;
         uint duration = _duration == 0 ? DURATION : _duration;
         require(minBid >= MIN_BID, "Min bid for auction creation is 0.001 BNB");
 
@@ -103,7 +103,7 @@ contract VipAuctionEngine {
         auction.minBid = minBid;
         Ticket ticketContract = new Ticket(_item, ticketsSupply);
         auction.ticket = address(ticketContract);
-        auction.revenueAdress = revenueAdress;
+        auction.revenueAddress = revenueAddress;
         auction.startAt = block.timestamp; // now
         auction.endsAt = block.timestamp + duration;
 
@@ -178,7 +178,7 @@ contract VipAuctionEngine {
             );
             auctionBids += auctions[index].winners[i].bid;
         }
-        payable(auctions[index].revenueAdress).transfer(
+        payable(auctions[index].revenueAddress).transfer(
             (auctionBids * (100 - COMMISSION)) / 100
         );
         payable(owner).transfer((auctionBids * COMMISSION) / 100);
@@ -199,7 +199,7 @@ contract VipAuctionEngine {
     }
 
     // Функции для вывода информации об аукционах
-    function getAuctionLength() public view returns (uint) {
+    function getAuctionsLength() public view returns (uint) {
         return auctions.length;
     }
 
