@@ -1,4 +1,4 @@
-import React, { Component } from "react";
+import { Component } from "react";
 import { ethers } from "ethers";
 
 import { ConnectWallet } from "../components/ConnectWallet";
