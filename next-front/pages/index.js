@@ -23,19 +23,7 @@ export default class extends Component {
       transactionError: null,
       balance: null,
       auctionsLength: 0,
-      auctions: [
-        {
-          id: 0,
-          item: "",
-          ticketsSupply: 0,
-          minBid: 0,
-          ticket: "",
-          revenueAddress: "",
-          startAt: "",
-          endsAt: "",
-          ended: false,
-        },
-      ],
+      auctions: [],
     };
 
     this.state = this.initialState;
@@ -88,40 +76,15 @@ export default class extends Component {
       async () => {
         await this.updateBalance();
         await this.getAuctionsLength();
+        await this.fillAuctions();
       }
     );
 
-    // // this.startingPrice = await this._auction.startingPrice();
-    // // this.startAt = await this._auction.startAt();
-    // // this.discountRate = await this._auction.discountRate();
-    // this.auctionInfo = await this._auction.auctions(index);
-
-    // this.checkAuctions = setInterval((index) => {
-    //   console.log(auctionInfo);
-
-    //   this.setState((state) => {
-    //     auctions[index] = [
-    //       {
-    //         item: "",
-    //         ticketsSupply: 0,
-    //         minBid: 0,
-    //         ticket: "",
-    //         revenueAddress: "",
-    //         startAt: "",
-    //         endAt: "",
-    //         ended: false,
-    //       },
-    //     ];
-    //   });
-    // }, 10000);
+    this.checkAuctions = setInterval(() => {
+      //console.log(this.state.auctions);
+      this.fillAuctions();
+    }, 1000);
   }
-  // const startBlockNumber = await this._provider.getBlockNumber()
-  // this._auction.on('Bought', (...args) => {
-  //   const event = args[args.length - 1]
-  //   if(event.blockNumber <= startBlockNumber) return
-
-  //   args[0], args[1]
-  // })
 
   async updateBalance() {
     const newBalance = (
@@ -146,7 +109,7 @@ export default class extends Component {
     }
 
     this.setState({
-      networkError: "Please connect to localhost:8545",
+      networkError: "Please connect to localhost:8545 or BNBT",
     });
 
     return false;
@@ -176,41 +139,109 @@ export default class extends Component {
 
   getAuctionById = async (index) => {
     const auctionInfo = await this._auction.auctions(index);
-
-    this.setState({
-      auctions: [
+    const biddersInfo = await this._auction.getWinnersAndOtherParticipants(
+      index
+    );
+    console.log(biddersInfo.winners);
+    var newAuctions = this.state.auctions;
+    const newAuction = newAuctions.find((auction) => auction.id === index);
+    if (newAuction != undefined) {
+      newAuction.minBid = ethers.utils.formatEther(auctionInfo.minBid);
+      newAuction.ended = auctionInfo.ended;
+      newAuction.winners = biddersInfo.winners;
+      newAuction.otherParticipants = biddersInfo.otherParticipants;
+    } else {
+      newAuctions = [
+        ...this.state.auctions.slice(0, index),
         {
           id: index,
           item: auctionInfo.item,
           ticketsSupply: auctionInfo.ticketsSupply.toNumber(),
-          minBid: ethers.utils.formatEther(auctionInfo.minBid.toNumber()),
+          minBid: 0,
           ticket: auctionInfo.ticket,
           revenueAddress: auctionInfo.revenueAddress,
+          winners: biddersInfo.winners,
+          otherParticipants: biddersInfo.otherParticipants,
           startAt: auctionInfo.startAt.toNumber(),
           endsAt: auctionInfo.endsAt.toNumber(),
           ended: auctionInfo.ended,
         },
-      ],
+        ...this.state.auctions.slice(index),
+      ];
+    }
+    this.setState({
+      auctions: newAuctions,
     });
   };
 
   fillAuctions = async () => {
-    var ul = document.createElement("ul");
-
-    document.getElementById("auctionsList").appendChild(ul);
     for (let i = 0; i < this.state.auctionsLength; i++) {
-      console.log(this.state.auctionsLength);
       await this.getAuctionById(i);
-      var li = document.createElement("li");
-      ul.appendChild(li);
-      console.log(this.state.auctions[i].item);
-      li.innerHTML = li.innerHTML + state.auctions[i].item;
+    }
+  };
+
+  bid = async (index) => {
+    try {
+      const tx = await this._auction.bid(index, {
+        value: ethers.utils.parseUnits(
+          document.getElementById("bid_" + index).value,
+          "ether"
+        ),
+      });
+
+      this.setState({
+        txBeingSent: tx.hash,
+      });
+
+      await tx.wait();
+    } catch (error) {
+      if (error.code === ERROR_CODE_TX_REJECTED_BY_USER) {
+        return;
+      }
+
+      console.error(error);
+
+      this.setState({
+        transactionError: error,
+      });
+    } finally {
+      this.setState({
+        txBeingSent: null,
+      });
+      await this.updateBalance();
+      await this.fillAuctions();
+    }
+  };
+
+  endAuction = async (index) => {
+    try {
+      const tx = await this._auction.endAuction(index);
+
+      this.setState({
+        txBeingSent: tx.hash,
+      });
+
+      await tx.wait();
+    } catch (error) {
+      if (error.code === ERROR_CODE_TX_REJECTED_BY_USER) {
+        return;
+      }
+
+      console.error(error);
+
+      this.setState({
+        transactionError: error,
+      });
+    } finally {
+      this.setState({
+        txBeingSent: null,
+      });
+      await this.updateBalance();
+      await this.fillAuctions();
     }
   };
 
   createAuction = async () => {
-    //console.log((ethers.utils.parseEther(this.state.currentPrice + 1)).toString())
-    console.log(document.getElementById("_item").value);
     try {
       const tx = await this._auction.createAuction(
         document.getElementById("_item").value,
@@ -243,7 +274,8 @@ export default class extends Component {
         txBeingSent: null,
       });
       await this.updateBalance();
-      //await this.updateStopped();
+      await this.getAuctionsLength();
+      await this.fillAuctions();
     }
   };
 
@@ -268,7 +300,6 @@ export default class extends Component {
 
     return (
       <>
-        <script src="../components/script.js"></script>
         {this.state.txBeingSent && (
           <WaitingForTransactionMessage txHash={this.state.txBeingSent} />
         )}
@@ -281,7 +312,7 @@ export default class extends Component {
         )}
         {this.state.balance && (
           <p>
-            Your balance: {ethers.utils.formatEther(this.state.balance)} ETH
+            Your balance: {ethers.utils.formatEther(this.state.balance)} BNB
           </p>
         )}
         <div>
@@ -296,29 +327,29 @@ export default class extends Component {
           <div>
             <b>АДМИН ПАНЕЛЬ:</b>
             <br />
-            <div class="formWrapper">
+            <div className="formWrapper">
               <ul>
-                <li class="formLine">
+                <li className="formLine">
                   <label for="item"> Наименование лота</label>
                   <input type="text" id="_item" />
                 </li>
-                <li class="formLine">
+                <li className="formLine">
                   <label for="_ticketsSupply"> Количество лотов</label>
                   <input type="text" id="_ticketsSupply" />
                 </li>
-                <li class="formLine">
+                <li className="formLine">
                   <label for="_minBid"> Минимальная ставка(BNB)</label>
                   <input type="text" id="_minBid" />
                 </li>
-                <li class="formLine">
+                <li className="formLine">
                   <label for="_revenueAddress"> Адрес дохода</label>
                   <input type="text" id="_revenueAddress" />
                 </li>
-                <li class="formLine">
+                <li className="formLine">
                   <label for="_duration"> Длительность аукциона</label>
                   <input type="text" id="_duration" />
                 </li>
-                <li class="formLine">
+                <li className="formLine">
                   <button onClick={this.createAuction}>
                     Создать и начать аукцион
                   </button>
@@ -342,18 +373,186 @@ export default class extends Component {
               Обновить количество аукционов
             </button>
             {this.state.auctionsLength && (
-              <p>Уже провели: {this.state.auctionsLength}</p>
+              <p>Мы уже провели: {this.state.auctionsLength}</p>
             )}
           </div>
           <div>
             <b>ТЕКУЩИЕ АУКЦИОНЫ:</b>
             <button onClick={this.fillAuctions}>Обновить аукционы</button>
-            <div id="auctionsList"></div>
+            {this.state.auctions.map((auction) =>
+              auction.ended ? (
+                false
+              ) : (
+                <>
+                  <li key={auction.id}>
+                    {" "}
+                    <b>Аукцион -</b> {auction.id}
+                    <ul>
+                      <li>
+                        <b>Лот: </b> {auction.item}
+                      </li>
+                      <li>
+                        <b>Кол-во лотов: </b>
+                        {auction.ticketsSupply}
+                      </li>
+                      <li>
+                        <b>Текущая минимальная ставка: </b>
+                        {auction.minBid} BNB
+                        <button onClick={() => this.bid(auction.id)}>
+                          {" "}
+                          Поставить свою ставку
+                        </button>
+                        <input type="text" id={"bid_" + auction.id} />
+                      </li>
+                      <li>
+                        <b>Контракт лота: </b>{" "}
+                        <a
+                          href={
+                            "https://testnet.bscscan.com/address/" +
+                            auction.ticket
+                          }
+                        >
+                          {auction.ticket}
+                        </a>
+                      </li>
+                      <li>
+                        <b>Адрес дохода: </b>{" "}
+                        <a
+                          href={
+                            "https://testnet.bscscan.com/address/" +
+                            auction.revenueAddress
+                          }
+                        >
+                          {auction.revenueAddress}
+                        </a>
+                      </li>
+                      <li>
+                        <b>Аукцион начали: </b>
+                        {new Date(auction.startAt * 1000).toLocaleString()}
+                      </li>
+                      <li>
+                        <b>Аукцион закончится не раньше: </b>
+                        {new Date(auction.endsAt * 1000).toLocaleString()}
+                        <button onClick={() => this.endAuction(auction.id)}>
+                          {" "}
+                          Закончить аукцион
+                        </button>
+                      </li>
+                      <li>
+                        <b>Претенденты на победу:</b>
+
+                        {auction.winners.map((winner, i) => (
+                          <>
+                            <p>
+                              {i}-{winner[0]}-
+                              {ethers.utils.formatEther(winner.bid)}BNB
+                            </p>
+                          </>
+                        ))}
+                      </li>
+                      <li>
+                        <b>Остальные участники:</b>
+
+                        {auction.otherParticipants.map((participant, i) => (
+                          <>
+                            <p>
+                              {i}-{participant[0]}-
+                              {ethers.utils.formatEther(participant.bid)}BNB
+                            </p>
+                          </>
+                        ))}
+                      </li>
+                    </ul>
+                    <br />
+                  </li>
+                </>
+              )
+            )}
           </div>
           <br />
           <br />
           <div>
             <b>ПРОШЕДШИЕ АУКЦИОНЫ:</b>
+            {this.state.auctions.map((auction) =>
+              !auction.ended ? (
+                false
+              ) : (
+                <>
+                  <li key={auction.id}>
+                    {" "}
+                    <b>Аукцион -</b> {auction.id}
+                    <ul>
+                      <li>
+                        <b>Лот: </b> {auction.item}
+                      </li>
+                      <li>
+                        <b>Кол-во лотов: </b>
+                        {auction.ticketsSupply}
+                      </li>
+                      <li>
+                        <b>Минимальная ставка за которую получили лот: </b>
+                        {auction.minBid} BNB
+                      </li>
+                      <li>
+                        <b>Контракт лота: </b>{" "}
+                        <a
+                          href={
+                            "https://testnet.bscscan.com/address/" +
+                            auction.ticket
+                          }
+                        >
+                          {auction.ticket}
+                        </a>
+                      </li>
+                      <li>
+                        <b>Адрес дохода: </b>{" "}
+                        <a
+                          href={
+                            "https://testnet.bscscan.com/address/" +
+                            auction.revenueAddress
+                          }
+                        >
+                          {auction.revenueAddress}
+                        </a>
+                      </li>
+                      <li>
+                        <b>Аукцион начали: </b>
+                        {new Date(auction.startAt * 1000).toLocaleString()}
+                      </li>
+                      <li>
+                        <b>Аукцион закончился не раньше: </b>
+                        {new Date(auction.endsAt * 1000).toLocaleString()}
+                      </li>
+                      <li>
+                        <b>Победители:</b>
+
+                        {auction.winners.map((winner, i) => (
+                          <>
+                            <p>
+                              {i}-{winner[0]}-
+                              {ethers.utils.formatEther(winner.bid)}BNB
+                            </p>
+                          </>
+                        ))}
+                      </li>
+                      <li>
+                        <b>Остальные участники:</b>
+
+                        {auction.otherParticipants.map((participant, i) => (
+                          <>
+                            <p>
+                              {i}-{participant[0]}-
+                              {ethers.utils.formatEther(participant.bid)}BNB
+                            </p>
+                          </>
+                        ))}
+                      </li>
+                    </ul>
+                    <br />
+                  </li>
+                </>
+              )
+            )}
           </div>
         </div>
       </>
